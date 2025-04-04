@@ -146,15 +146,15 @@ class Game2048Env(gym.Env):
             moved = self.move_right()
         else:
             moved = False
-
+        
         self.last_move_valid = moved  # Record if the move was valid
-
+        after_state = self.board.copy()
         if moved:
             self.add_random_tile()
 
         done = self.is_game_over()
 
-        return self.board, self.score, done, {}
+        return self.board, self.score, done, after_state
 
     def render(self, mode="human", action=None):
         """
@@ -230,10 +230,84 @@ class Game2048Env(gym.Env):
 
         # If the simulated board is different from the current board, the move is legal
         return not np.array_equal(self.board, temp_board)
+    
+
+
+
+import copy  # Used for deep copying the environment
+import random
+from value_approximator import NTupleApproximator
+patterns = [
+    [(0, 0), (0, 1), (1, 0), (1, 1)],   # square
+    [(1, 0), (1, 1), (2, 0), (2, 1)],   # square
+    [(1, 1), (1, 2), (2, 1), (2, 2)],   # square
+    [(0, 0), (1, 0), (2, 0), (3, 0)],   # straight line
+    [(0, 1), (1, 1), (2, 1), (3, 1)],   # straight line
+    [(0, 0), (0, 1), (1, 0), (2, 0)],   # L-shape
+    [(0, 1), (0, 2), (1, 1), (2, 1)]   # L-shape
+]
+
+approximator = NTupleApproximator(board_size=4, patterns=patterns)
+# Load the trained weights from a file
+with open('approximator_weights_7x4tuple.pkl', 'rb') as f:
+    approximator.weights = pickle.load(f)
 
 def get_action(state, score):
     env = Game2048Env()
-    return random.choice([0, 1, 2, 3]) # Choose a random action
+    env.board = state.copy()
+    env.score = score
+    done = False
+    
+
+    while not done:
+
+        legal_moves = [a for a in range(4) if env.is_move_legal(a)]
+        if not legal_moves:
+            break
+
+        # TODO: Use your N-Tuple approximator to play 2048
+        best_action = None
+        best_value = -float('inf')
+        for move in legal_moves:
+            new_env = copy.deepcopy(env)
+            new_env.board = state.copy()
+            new_env.score = score
+
+            _, new_reward, _, after_state = new_env.step(move)
+
+            action_value = new_reward + gamma * approximator.value(after_state)
+            if action_value > best_value:
+                best_action = move
+                best_value = action_value
+
+        action = best_action  # Choose the best action based on evaluation
+        state, _, done, _ = env.step(action)  # Apply the selected action
+        # env.render(action=action)  # Display the updated game state
+        return action
+
+env = Game2048Env()
+state = env.reset()
+# env.render()
+done = False
+gamma = 0.99
+score = 0
+
+while not done:
+    print("Current score:" + str(env.score))
+    # Get the current state and score
+    state = env.board.copy()
+    score = env.score
+
+    # Call the get_action function to select an action
+    action = get_action(state, score)
+
+    # Apply the selected action to the environment
+    state, score, done, _ = env.step(action)
+
+    # Render the game board (optional)
+    # env.render(action=action)
+# Print final game results
+print("Game over, final score:", score)
     
     # You can submit this random agent to evaluate the performance of a purely random strategy.
 
